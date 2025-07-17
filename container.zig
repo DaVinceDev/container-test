@@ -1,36 +1,33 @@
 const std = @import("std");
-const eql = std.mem.eql;
 const linux = std.os.linux;
 
-pub fn main() !void {
-    const allocator = std.heap.page_allocator;
+const ArgsWrapper = struct {
+    args: []const []const u8,
+};
 
-    const args = std.process.argsAlloc(allocator) catch return 1;
+pub fn main() !void {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+
+    const allocator = arena.allocator();
+
+    const args = std.process.argsAlloc(allocator) catch return;
 
     if (args.len <= 1) {
         std.debug.print("Try a valid command.\n", .{});
-        return 1;
+        return;
     }
 
     const command_args = args[1..];
-    if (eql(u8, "run", command_args[0])) {
-        const rawCommand = std.mem.concat(allocator, []const u8, &[_][]const u8{ "/proc/self/exe", "child" });
-        defer allocator.free(rawCommand);
-
-        const buf = try allocator.alloc(u8, rawCommand.len);
-        std.mem.copyForwards(u8, buf.ptr, rawCommand);
-        container(toExecute, buf);
-    }
-
-    if (eql(u8, "child", command_args[0]))
-        child(allocator, command_args[1..]);
+    const wrapper = try allocator.create(ArgsWrapper);
+    wrapper.args = command_args;
+    try container(toExecute, @intFromPtr(wrapper));
 }
 
 fn container(func: *const fn (usize) callconv(.c) u8, argv: usize) !void {
     const stack_size = 4096 * 4;
-    var stack: [stack_size]u8 align(16) = undefined; // this is a buffer with the stack size calculated
-    const stack_top = @intFromPtr(&stack) + stack.len; // a reference of the stack top
-
+    var stack: [stack_size]u8 align(16) = undefined;
+    const stack_top = @intFromPtr(&stack) + stack.len;
     const flags = linux.CLONE.NEWUTS | linux.CLONE.NEWPID | linux.CLONE.NEWNS | linux.SIG.CHLD;
     const pid_usize = linux.clone(func, stack_top, flags, argv, null, 0, null);
 
@@ -47,11 +44,6 @@ fn container(func: *const fn (usize) callconv(.c) u8, argv: usize) !void {
     _ = std.os.linux.waitpid(pid, &status, 0);
 }
 
-fn child(allocator: std.mem.Allocator, args: []const u8) !void {
-    std.debug.print("Running ", .{});
-    runCommand(allocator, &[_][]const u8{args});
-}
-
 fn runCommand(allocator: std.mem.Allocator, args: []const []const u8) !void {
     var process = std.process.Child.init(args, allocator);
 
@@ -59,13 +51,26 @@ fn runCommand(allocator: std.mem.Allocator, args: []const []const u8) !void {
     process.stdout_behavior = .Inherit;
     process.stderr_behavior = .Inherit;
 
-    const result = process.spawnAndWait() catch return error.FailedToSpawn;
+    const result = try process.spawnAndWait();
 
-    if (result != .Exited) std.debug.print("Error happened.\n", .{});
+    switch (result) {
+        .Exited => {},
+        .Signal => |sig| std.debug.print("Process exited with signal {}.\n", .{sig}),
+        else => |e| std.debug.print("Unexpected behavior. Error:{}\n", .{e}),
+    }
 }
 
 fn toExecute(argv: usize) callconv(.c) u8 {
     const allocator = std.heap.page_allocator;
-    const arg_ptr: [*]const u8 = @ptrCast(argv);
-    runCommand(allocator, arg_ptr);
+    const wrapper: *ArgsWrapper = @ptrFromInt(argv);
+    const args = wrapper.args;
+
+    std.debug.print("Running {s} as PID {}...\n", .{ args[0], linux.getpid() });
+
+    //   std.debug.print("ARGS BEING PASSED: {s}\n", .{args});
+    runCommand(allocator, args) catch |e| {
+        std.debug.print("Error while trying to execute command: {}\n", .{e});
+        return 1;
+    };
+    return 0;
 }
