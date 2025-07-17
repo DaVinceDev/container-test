@@ -2,13 +2,37 @@ const std = @import("std");
 const eql = std.mem.eql;
 const linux = std.os.linux;
 
-pub fn main() anyerror!void {
+pub fn main() !void {
+    const allocator = std.heap.page_allocator;
+
+    const args = std.process.argsAlloc(allocator) catch return 1;
+
+    if (args.len <= 1) {
+        std.debug.print("Try a valid command.\n", .{});
+        return 1;
+    }
+
+    const command_args = args[1..];
+    if (eql(u8, "run", command_args[0])) {
+        const rawCommand = std.mem.concat(allocator, []const u8, &[_][]const u8{ "/proc/self/exe", "child" });
+        defer allocator.free(rawCommand);
+
+        const buf = try allocator.alloc(u8, rawCommand.len);
+        std.mem.copyForwards(u8, buf.ptr, rawCommand);
+        container(toExecute, buf);
+    }
+
+    if (eql(u8, "child", command_args[0]))
+        child(allocator, command_args[1..]);
+}
+
+fn container(func: *const fn (usize) callconv(.c) u8, argv: usize) !void {
     const stack_size = 4096 * 4;
     var stack: [stack_size]u8 align(16) = undefined; // this is a buffer with the stack size calculated
     const stack_top = @intFromPtr(&stack) + stack.len; // a reference of the stack top
 
     const flags = linux.CLONE.NEWUTS | linux.CLONE.NEWPID | linux.CLONE.NEWNS | linux.SIG.CHLD;
-    const pid_usize = linux.clone(toExecute, stack_top, flags, 0, null, 0, null);
+    const pid_usize = linux.clone(func, stack_top, flags, argv, null, 0, null);
 
     const INVALID_PID: usize = @bitCast(@as(isize, -1));
     if (pid_usize == INVALID_PID) {
@@ -17,31 +41,31 @@ pub fn main() anyerror!void {
     }
     if (pid_usize == @intFromEnum(linux.E.INVAL)) return error.InvalidArgument;
 
-    //pid pid
     const pid: i32 = @intCast(pid_usize);
 
     var status: u32 = 0;
     _ = std.os.linux.waitpid(pid, &status, 0);
 }
 
+fn child(allocator: std.mem.Allocator, args: []const u8) !void {
+    std.debug.print("Running ", .{});
+    runCommand(allocator, &[_][]const u8{args});
+}
+
 fn runCommand(allocator: std.mem.Allocator, args: []const []const u8) !void {
-    var child = std.process.Child.init(args, allocator);
+    var process = std.process.Child.init(args, allocator);
 
-    child.stdin_behavior = .Inherit;
-    child.stdout_behavior = .Inherit;
-    child.stderr_behavior = .Inherit;
+    process.stdin_behavior = .Inherit;
+    process.stdout_behavior = .Inherit;
+    process.stderr_behavior = .Inherit;
 
-    const result = child.spawnAndWait() catch return error.FailedToSpawn;
+    const result = process.spawnAndWait() catch return error.FailedToSpawn;
 
     if (result != .Exited) std.debug.print("Error happened.\n", .{});
 }
-fn toExecute(_: usize) callconv(.c) u8 {
+
+fn toExecute(argv: usize) callconv(.c) u8 {
     const allocator = std.heap.page_allocator;
-
-    runCommand(allocator, &[_][]const u8{"hostname"}) catch return 1;
-
-    runCommand(allocator, &[_][]const u8{ "hostname", "zig-host" }) catch return 1;
-
-    runCommand(allocator, &[_][]const u8{"hostname"}) catch return 1;
-    return 0;
+    const arg_ptr: [*]const u8 = @ptrCast(argv);
+    runCommand(allocator, arg_ptr);
 }
