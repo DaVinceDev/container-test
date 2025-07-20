@@ -1,10 +1,12 @@
 const std = @import("std");
 const linux = std.os.linux;
 
+// Argument wrapper duh
 const ArgsWrapper = struct {
     args: []const []const u8,
 };
 
+// Entry point duh
 pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
@@ -75,12 +77,15 @@ fn toExecute(argv: usize) callconv(.c) u8 {
     return 0;
 }
 
+// Mounts proc duh
 fn monty() !void {
     _ = linux.unshare(linux.CLONE.NEWNS);
     const mount_flags = linux.MS.NOSUID | linux.MS.NOEXEC | linux.MS.NODEV;
     _ = linux.mount("proc", "/proc", "proc", mount_flags, 0);
 }
 
+// This changes the directory to the rootfs downloaded in the dockerfile
+// To confirm its existence you can `ll /`
 fn chroot() !void {
     _ = linux.chroot("/rootfs");
     _ = linux.chdir("/");
