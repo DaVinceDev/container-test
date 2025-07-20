@@ -15,6 +15,14 @@ RUN curl -L https://ziglang.org/download/${ZIG_VERSION}/zig-linux-x86_64-${ZIG_V
     mv zig-linux-x86_64-${ZIG_VERSION} /opt/zig && \
     ln -s /opt/zig/zig /usr/local/bin/zig
 
+
+RUN apt-get update && apt-get install -y \
+    debootstrap \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create rootfs using debootstrap
+RUN debootstrap --variant=minbase bookworm /rootfs http://deb.debian.org/debian
+
 # Create app directory
 WORKDIR /zigsandbox
 

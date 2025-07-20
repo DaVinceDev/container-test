@@ -67,8 +67,8 @@ fn toExecute(argv: usize) callconv(.c) u8 {
 
     std.debug.print("Running {s} as PID {}...\n", .{ args[0], linux.getpid() });
 
+    try chroot();
     try monty();
-    //   std.debug.print("ARGS BEING PASSED: {s}\n", .{args});
     runCommand(allocator, args) catch |e| {
         std.debug.print("Error while trying to execute command: {}\n", .{e});
         return 1;
@@ -80,4 +80,10 @@ fn monty() !void {
     _ = linux.unshare(linux.CLONE.NEWNS);
     const mount_flags = linux.MS.NOSUID | linux.MS.NOEXEC | linux.MS.NODEV;
     _ = linux.mount("proc", "/proc", "proc", mount_flags, 0);
+}
+
+fn chroot() !void {
+    _ = linux.chroot("/rootfs");
+    _ = linux.chdir("/");
+    try monty();
 }
