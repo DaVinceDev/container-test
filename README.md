@@ -1,4 +1,4 @@
-# Mini-Runtime Container in Zig
+# Mini-container runtime in Zig
 
 This project is a mini container runtime built from scratch. It teached me how containers work under the hood using linux syscalls like: clone,unshare,
 mount,chroot,etc; along with new knowledge about memory management in zig.
