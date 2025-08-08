@@ -36,8 +36,9 @@ There! You're inside a container.
 
 Now that you're inside the container, you might want to test atleast two things:
 
-Hostname test
-Fetch for PID's
+`Hostname test` 
+and 
+`Fetch for PID's`
 
 ### Hostname test 
 
